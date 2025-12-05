@@ -22,7 +22,6 @@ CRITERIA = [
 ]
 
 WEIGHTS = [4, 5, 4, 3, 2, 3, 2, 1.5, 1.5, 2, 1, 1.5]
-
 IMPACTS = ['-', '+', '+', '+', '+', '+', '+', '+', '+', '+', '+', '+']
 
 TABLE_COLUMNS = [
@@ -74,7 +73,10 @@ def recommend_smartphones(
     df: pd.DataFrame,
     budget: int | None = None,
     top_n: int = 10,
-    min_rating: float | None = None
+    min_rating: float | None = None,
+    max_rating: float | None = None,
+    min_ram: float | None = None,
+    max_ram: float | None = None,
 ) -> pd.DataFrame:
     df_scored = topsis_scores(df)
 
@@ -83,6 +85,15 @@ def recommend_smartphones(
 
     if min_rating is not None:
         df_scored = df_scored[df_scored["rating"] >= min_rating].copy()
+
+    if max_rating is not None:
+        df_scored = df_scored[df_scored["rating"] <= max_rating].copy()
+
+    if min_ram is not None:
+        df_scored = df_scored[df_scored["ram_capacity"] >= min_ram].copy()
+
+    if max_ram is not None:
+        df_scored = df_scored[df_scored["ram_capacity"] <= max_ram].copy()
 
     if df_scored.empty:
         return df_scored
@@ -158,7 +169,7 @@ class SPKApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("SPK Pemilihan HP Terbaik - TOPSIS")
-        self.geometry("1220x520")
+        self.geometry("1220x550")
 
         try:
             self.df = load_data(DATA_PATH)
@@ -174,7 +185,7 @@ class SPKApp(tk.Tk):
         frame_top.pack(side=tk.TOP, fill=tk.X)
 
         ttk.Label(frame_top, text="Budget maksimum (Rp):").grid(row=0, column=0, sticky="w")
-        self.entry_budget = ttk.Entry(frame_top, width=18)
+        self.entry_budget = ttk.Entry(frame_top, width=16)
         self.entry_budget.grid(row=0, column=1, padx=5)
 
         ttk.Label(frame_top, text="Jumlah HP ditampilkan:").grid(row=0, column=2, sticky="w")
@@ -187,14 +198,30 @@ class SPKApp(tk.Tk):
         self.entry_rating_min.insert(0, "4.0")
         self.entry_rating_min.grid(row=0, column=5, padx=5)
 
+        ttk.Label(frame_top, text="Rating maksimum:").grid(row=0, column=6, sticky="w")
+        self.entry_rating_max = ttk.Entry(frame_top, width=6)
+        self.entry_rating_max.grid(row=0, column=7, padx=5)
+
+        ttk.Label(frame_top, text="RAM minimum (GB):").grid(row=0, column=8, sticky="w")
+        self.entry_ram_min = ttk.Entry(frame_top, width=6)
+        self.entry_ram_min.grid(row=0, column=9, padx=5)
+
+        ttk.Label(frame_top, text="RAM maksimum (GB):").grid(row=0, column=10, sticky="w")
+        self.entry_ram_max = ttk.Entry(frame_top, width=6)
+        self.entry_ram_max.grid(row=0, column=11, padx=5)
+
         btn_all = ttk.Button(frame_top, text="10 HP Terbaik (tanpa budget)", command=self.show_all)
-        btn_all.grid(row=0, column=6, padx=5)
+        btn_all.grid(row=1, column=0, columnspan=2, pady=8)
 
         btn_recommend = ttk.Button(frame_top, text="Rekomendasikan", command=self.show_recommendation)
-        btn_recommend.grid(row=0, column=7, padx=5)
+        btn_recommend.grid(row=1, column=2, columnspan=2, pady=8, padx=5)
 
         btn_dataset = ttk.Button(frame_top, text="Lihat Semua Dataset", command=self.show_dataset)
-        btn_dataset.grid(row=0, column=8, padx=5)
+        btn_dataset.grid(row=1, column=4, columnspan=2, pady=8)
+
+        for col in range(12):
+            frame_top.grid_columnconfigure(col, weight=0)
+        frame_top.grid_columnconfigure(11, weight=1)
 
         frame_table = ttk.Frame(self)
         frame_table.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -250,7 +277,6 @@ class SPKApp(tk.Tk):
 
         df_fmt = format_result(df)
         column_order = self.tree["columns"]
-
         for _, row in df_fmt.iterrows():
             values = [row[col] for col in column_order]
             self.tree.insert("", tk.END, values=values)
@@ -266,21 +292,45 @@ class SPKApp(tk.Tk):
             messagebox.showwarning("Peringatan", "Jumlah HP harus berupa angka. Dipakai nilai default 10.")
             return 10
 
-    def get_min_rating(self) -> float | None:
-        txt = self.entry_rating_min.get().strip()
+    def _parse_float(self, entry: ttk.Entry, label: str) -> float | None:
+        txt = entry.get().strip()
         if not txt:
             return None
         try:
-            value = float(txt)
-            return max(0.0, value)
+            return float(txt)
         except ValueError:
-            messagebox.showwarning("Peringatan", "Rating minimum tidak valid. Filter rating diabaikan.")
+            messagebox.showwarning("Peringatan", f"{label} tidak valid. Nilai diabaikan.")
             return None
+
+    def get_rating_bounds(self) -> tuple[float | None, float | None]:
+        min_val = self._parse_float(self.entry_rating_min, "Rating minimum")
+        max_val = self._parse_float(self.entry_rating_max, "Rating maksimum")
+        if min_val is not None and max_val is not None and min_val > max_val:
+            messagebox.showwarning("Peringatan", "Rating minimum melebihi maksimum. Nilai ditukar.")
+            min_val, max_val = max_val, min_val
+        return min_val, max_val
+
+    def get_ram_bounds(self) -> tuple[float | None, float | None]:
+        min_val = self._parse_float(self.entry_ram_min, "RAM minimum")
+        max_val = self._parse_float(self.entry_ram_max, "RAM maksimum")
+        if min_val is not None and max_val is not None and min_val > max_val:
+            messagebox.showwarning("Peringatan", "RAM minimum melebihi maksimum. Nilai ditukar.")
+            min_val, max_val = max_val, min_val
+        return min_val, max_val
 
     def show_all(self):
         top_n = self.get_topn()
-        min_rating = self.get_min_rating()
-        df_res = recommend_smartphones(self.df, budget=None, top_n=top_n, min_rating=min_rating)
+        rating_min, rating_max = self.get_rating_bounds()
+        ram_min, ram_max = self.get_ram_bounds()
+        df_res = recommend_smartphones(
+            self.df,
+            budget=None,
+            top_n=top_n,
+            min_rating=rating_min,
+            max_rating=rating_max,
+            min_ram=ram_min,
+            max_ram=ram_max,
+        )
         self.fill_table(df_res)
 
     def show_recommendation(self):
@@ -294,8 +344,18 @@ class SPKApp(tk.Tk):
                 return
 
         top_n = self.get_topn()
-        min_rating = self.get_min_rating()
-        df_res = recommend_smartphones(self.df, budget=budget, top_n=top_n, min_rating=min_rating)
+        rating_min, rating_max = self.get_rating_bounds()
+        ram_min, ram_max = self.get_ram_bounds()
+
+        df_res = recommend_smartphones(
+            self.df,
+            budget=budget,
+            top_n=top_n,
+            min_rating=rating_min,
+            max_rating=rating_max,
+            min_ram=ram_min,
+            max_ram=ram_max,
+        )
         self.fill_table(df_res)
 
     def show_dataset(self):
